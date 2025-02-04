@@ -2,10 +2,12 @@ import * as dotenv from "dotenv";
 dotenv.config();
 import express, { type Request, type Response } from "express";
 import cors from "cors";
-import { UserModel } from "./db";
+import { ContentModel, UserModel } from "./db";
 import mongoose from "mongoose";
 import { z } from "zod";
 import bcrypt, { hash } from "bcrypt";
+import jwt from "jsonwebtoken";
+import { userMiddleWare } from "./middleware";
 
 const app = express();
 app.use(express.json());
@@ -61,9 +63,62 @@ app.post("/api/v2/signup", async (req: Request, res: Response) => {
   }
 });
 
-app.post("/api/v2/signin", (req: Request, res: Response) => {});
+app.post("/api/v2/signin", async (req: Request, res: Response) => {
+  try {
+    const {username, password}  = req.body;
+    if(!username || !password) {
+      throw new Error ("Please enter username and password or a unique username");
+    }
 
-app.post("/api/v2/content", (req: Request, res: Response) => {});
+    const userdata  = await UserModel.findOne({
+      username: username,
+    });
+
+    if(!userdata) {
+      throw new Error("User does not exsits..")
+    }
+
+    const compPassword = await bcrypt.compare(password, userdata.password);
+    if(!compPassword) {
+      throw new Error("Wrong password");
+    }
+    if (typeof process.env.JWT_SECRET === "string") {
+      const token = jwt.sign({
+        id: userdata._id,
+      }, process.env.JWT_SECRET
+      )
+
+      res.status(200).send(token);
+    } else{
+      throw new Error("Error occured while genrating token")
+    }
+
+  } catch(err){
+      res.status(400).send(`error occured in login ${err}`)
+    
+  }
+});
+
+app.post("/api/v2/content", userMiddleWare, async (req: Request, res: Response) => {
+
+  try {
+    const userId = req.userId;
+    const { type, link, title, tags } = req.body;
+    if (!type || !link || !title) {
+      throw new Error("enter all the field to create a content");
+    }
+    await ContentModel.create({
+      type: type,
+      link: link,
+      title: title,
+      tags: tags,
+      userId: userId,
+    });
+    res.status(200).send("Content added ..!");
+  } catch (err) {
+    res.status(400).send(`Error occured while creating .. ${err}`);
+  }
+});
 
 app.get("/api/v2/content", (req: Request, res: Response) => {});
 
